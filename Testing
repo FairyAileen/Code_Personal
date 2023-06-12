@@ -1,0 +1,159 @@
+#include <Adafruit_GFX.h>
+#include <MCUFRIEND_kbv.h>
+MCUFRIEND_kbv tft;
+#include <TouchScreen.h>
+#define MINPRESSURE 200
+#define MAXPRESSURE 1000
+
+//---- LCD Thread ----------
+void LCD_Touch_Thread();
+unsigned int LCD_Touch_thread_counter;
+byte LCD_Touch_thread_state;
+
+#define LCD_TOUCH_THREAD_DO_NOTHING        1
+#define LCD_TOUCH_THREAD_START_UP          2
+#define LCD_TOUCH_THREAD_STEP_1            3
+#define LCD_TOUCH_THREAD_STEP_2            4
+#define LCD_TOUCH_THREAD_STEP_3            5
+
+//---- LCD Thread ----------
+void LCD_Display_Thread();
+unsigned int LCD_Display_thread_counter;
+byte LCD_Display_thread_state;
+
+#define LCD_DISPLAY_THREAD_DO_NOTHING        1
+#define LCD_DISPLAY_THREAD_START_UP          2
+#define LCD_DISPLAY_THREAD_STEP_1            3
+#define LCD_DISPLAY_THREAD_STEP_2            4
+#define LCD_DISPLAY_THREAD_STEP_3            5
+
+#define XP                              7
+#define XM                              A1
+#define YP                              A2
+#define YM                              6
+
+#define TS_LEFT                         952
+#define TS_RT                           114
+#define TS_TOP                          157
+#define TS_BOT                          944
+
+#define BLACK   0x0000
+#define BLUE    0x001F
+#define RED     0xF800
+#define GREEN   0x07E0
+#define CYAN    0x07FF
+#define MAGENTA 0xF81F
+#define YELLOW  0xFFE0
+#define WHITE   0xFFFF
+
+Adafruit_GFX_Button on_btn, off_btn;
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+
+void setup() {
+  Serial.begin(115200);
+
+  LCD_Touch_thread_state = LCD_TOUCH_THREAD_START_UP;
+  LCD_Display_thread_state = LCD_DISPLAY_THREAD_START_UP;
+  //tft.begin(ID);
+  uint16_t ID = tft.readID();         
+  //if (ID == 0xD3D3) ID = 0x9486; // write-only shield
+  tft.begin(ID);
+  //tft.setRotation(0);            //PORTRAIT
+  tft.fillScreen(BLACK);
+  on_btn.initButton(&tft,  60, 200, 100, 40, WHITE, CYAN, BLACK, "ON", 2);
+  off_btn.initButton(&tft, 180, 200, 100, 40, WHITE, CYAN, BLACK, "OFF", 2);
+  on_btn.drawButton(false);
+  off_btn.drawButton(false);
+  
+//stop interrupts
+  cli();
+//---- set timer0 interrupt at 1kHz For Multi-tasking --------
+  TCCR4A = 0;
+  TCCR4B = 0;
+  TCNT4  = 0;
+  
+  OCR4A = 250;// = (16*10^6) / (1000*64) - 1 (must be <256)
+  // turn on CTC mode
+  TCCR4B |= (1 << WGM42);
+  
+  TCCR4B |= (1 << CS41) | (1 << CS40);   
+  
+  TIMSK4 |= (1 << OCIE4A);
+
+  //allow interrupts
+  sei();
+//------------------------------------------------------------
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  LCD_Touch_Thread();
+  LCD_Display_Thread();
+}
+
+ISR(TIMER4_COMPA_vect)
+{
+  if (LCD_Touch_thread_counter           > 0 )  {LCD_Touch_thread_counter--; }
+  if (LCD_Display_thread_counter         > 0 )  {LCD_Display_thread_counter--; }
+}
+
+void LCD_Touch_Thread()
+{
+  if(LCD_Touch_thread_counter == 0)
+  {
+    switch(LCD_Touch_thread_state)
+    {
+      case LCD_TOUCH_THREAD_DO_NOTHING:
+      {
+        
+      }
+      break;
+      case LCD_TOUCH_THREAD_START_UP:
+      {  
+        TSPoint p = ts.getPoint();
+        Serial.print("x: ");
+        Serial.println(p.x);
+        Serial.print("y: ");
+        Serial.println(p.y);
+        Serial.print("z: ");
+        Serial.println(p.z);
+
+        LCD_Touch_thread_counter = 500;
+        LCD_Touch_thread_state = LCD_TOUCH_THREAD_DO_NOTHING;
+      }
+      break;
+      case LCD_TOUCH_THREAD_STEP_1:
+      {
+        
+      }
+      break;      
+    }
+  }
+}
+
+void LCD_Display_Thread()
+{
+  if(LCD_Display_thread_counter == 0)
+  {
+    switch(LCD_Display_thread_state)
+    {
+      case LCD_DISPLAY_THREAD_DO_NOTHING:
+      {
+        
+      }
+      break;
+      case LCD_DISPLAY_THREAD_START_UP:
+      { 
+
+        LCD_Display_thread_counter = 500;
+        LCD_Display_thread_state = LCD_DISPLAY_THREAD_DO_NOTHING;
+      }
+      break;
+      case LCD_DISPLAY_THREAD_STEP_1:
+      {
+        
+      }
+      break;      
+    }
+  }
+}
