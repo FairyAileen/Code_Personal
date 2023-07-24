@@ -145,9 +145,9 @@ float buff_12 = 0;
 
 void setup() {
   // put your setup code here, to run once:
-
   Serial.begin(9600);
   Serial.println(F("READY!"));
+  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BTY_SUPPLY_P, OUTPUT);
   pinMode(GGW_LAUNCH_EN, OUTPUT);
   pinMode(PRE_FIRE, OUTPUT);
@@ -780,6 +780,7 @@ void Serial_Command_thread()
               else if(buff.startsWith("EB900CHECK", 0)) 
               {
                   Serial.print("The Barth is HAPPY!");
+                  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
                   save_millis = millis();
                   serial_command_thread_counter = 100;
                   serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_6;
