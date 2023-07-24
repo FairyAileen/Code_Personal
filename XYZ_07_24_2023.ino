@@ -1,0 +1,892 @@
+/*
+July 20, 2023
+Embedded Code
+Code Author: Fairy Aileen Agodolo, ECE, ECT
+
+-------------------Embedded Code Command for Serial Monitor-----------------------
+
+Send via Serial Monitor (9600 baud rate) this commands:
+Barth OUT1: BTY_SUPPLY_P_ON                    EB902H00000#
+Barth OUT1: BTY_SUPPLY_P_OFF                   EB902L00000#  
+Barth OUT2: GGW_LAUNCH_EN_ON                   EB9020H0000#
+Barth OUT2: GGW_LAUNCH_EN_OFF                  EB9020L0000#
+Barth OUT3: PRE_FIRE_ON                        EB90200H000#
+Barth OUT3: PRE_FIRE_OFF                       EB90200L000#
+Barth OUT4: EXT_PS_ON                          EB902000H00#
+Barth OUT4: EXT_PS_OFF                         EB902000L00#
+Barth OUT5: PRESENCE_ON                        EB9020000H0#
+Barth OUT5: PRESENCE_OFF                       EB9020000L0#
+Barth OUT5: LANYARD_SW1_PS_ON                  EB90200000H#
+Barth OUT5: LANYARD_SW1_PS_OFF                 EB90200000L#
+Barth IN1: RELAY_1_C, NC:HOBS_EN               EB901H000000#
+Barth IN1: RELAY_1_C, NO:GGW_LAUNCH_EN         EB901L000000#
+Barth IN2: RELAY_2_C, NC:+12V_FUZE             EB9010H00000#
+Barth IN2: RELAY_2_C, NO:+28V_FUZE             EB9010L00000#
+Barth IN3: RELAY_3_C, NC:SEEKER_PS             EB90100H0000#
+Barth IN3: RELAY_3_C, NO:TEL_PS                EB90100L0000#
+Barth IN4: RELAY_4_C, NC:ADS_HEATER_PS         EB901000H000#
+Barth IN4: RELAY_4_C, NO:ADS_PS                EB901000L000#
+Barth IN5: RELAY_5_C, NC:PRE_FIRE_MON          EB9010000H00#
+Barth IN5: RELAY_5_C, NO:TEL_BAT_LATCH         EB9010000L00#
+Barth IN6: RELAY_6_C, NC:UMB_BREAK_FUZE        EB90100000H0#
+Barth IN6: RELAY_6_C, NO:LYN_REL_FUZE          EB90100000L0#
+Barth IN7: RELAY_7_C, NC:BTY_ACTIVATE          EB901000000H#
+Get All the values of EB901:                   EB904ALLVALUES#                
+Software Version:  PCB_ASSY_SAFETY_SAL_VER_1.0_2023     EB903VER#
+CHECK_BARTH_CONNECTION:                               EB900CHECK#
+*/
+
+/*--------------------------------Global Variables---------------------------------*/
+/*First Thread: Serial Command Thread, this is where you will set a command and get aresponse to a serial monitor*/
+void Serial_Command_thread();
+byte serial_command_thread_state;
+unsigned int serial_command_thread_counter;
+
+#define SERIAL_COMMAND_THREAD_DO_NOTHING      0
+#define SERIAL_COMMAND_THREAD_STEP_1          1
+#define SERIAL_COMMAND_THREAD_STEP_2          2
+#define SERIAL_COMMAND_THREAD_STEP_3          3
+#define SERIAL_COMMAND_THREAD_STEP_4          4
+#define SERIAL_COMMAND_THREAD_STEP_5          5
+#define SERIAL_COMMAND_THREAD_STEP_6          6
+#define SERIAL_COMMAND_THREAD_STEP_7          7
+
+byte   serial_okay = 0;
+String buff = "";
+byte   data_ctr = 0;
+byte   cursor_counter = 0;
+
+/*Second Thread: Barth_Out_Control_thread, this is where you control the output of the Barth*/
+void Barth_Out_Control_thread();
+byte barth_out_control_thread_state;
+unsigned int barth_out_control_thread_counter;
+unsigned long save_millis;
+byte barth_out = 0;
+
+#define BTY_SUPPLY_P                          0
+#define BTY_SUPPLY_P_ON                       digitalWrite(BTY_SUPPLY_P, HIGH);
+#define BTY_SUPPLY_P_OFF                      digitalWrite(BTY_SUPPLY_P, LOW);
+#define GGW_LAUNCH_EN                         1
+#define GGW_LAUNCH_EN_ON                      digitalWrite(GGW_LAUNCH_EN, HIGH);
+#define GGW_LAUNCH_EN_OFF                     digitalWrite(GGW_LAUNCH_EN, LOW);
+#define PRE_FIRE                              2
+#define PRE_FIRE_ON                           digitalWrite(PRE_FIRE, HIGH);
+#define PRE_FIRE_OFF                          digitalWrite(PRE_FIRE, LOW);
+#define EXT_PS                                3
+#define EXT_PS_ON                             digitalWrite(EXT_PS, HIGH);
+#define EXT_PS_OFF                            digitalWrite(EXT_PS, LOW);
+#define PRESENCE                              4
+#define PRESENCE_ON                           digitalWrite(PRESENCE, HIGH);
+#define PRESENCE_OFF                          digitalWrite(PRESENCE, LOW);
+#define LANYARD_SW1_PS                        5
+#define LANYARD_SW1_PS_ON                     digitalWrite(LANYARD_SW1_PS, HIGH);
+#define LANYARD_SW1_PS_OFF                    digitalWrite(LANYARD_SW1_PS, LOW);
+
+#define BARTH_OUT_CONTROL_DO_NOTHING          0
+#define BARTH_OUT_CONTROL_STEP_1              1
+#define BARTH_OUT_CONTROL_STEP_2              2
+#define BARTH_OUT_CONTROL_STEP_3              3
+#define BARTH_OUT_CONTROL_STEP_4              4
+#define BARTH_OUT_CONTROL_STEP_5              5
+#define BARTH_OUT_CONTROL_STEP_6              6
+#define BARTH_OUT_CONTROL_STEP_7              7
+
+/*Third Thread: Barth_Read_In_thread, this is where you read the input of the Barth that is connected to USB_8CH_Relay*/
+void Barth_Read_In_thread();
+byte barth_read_in_thread_state;
+unsigned int barth_read_in_thread_counter;
+byte barth_in = 0;
+byte relayState = 0;
+float relay_1_analog_read = 0;
+unsigned int barth_analog_value_1 = 0;
+float buff_1 = 0;
+float relay_2_analog_read = 0;
+unsigned int barth_analog_value_2 = 0;
+float buff_2 = 0;
+float relay_3_analog_read = 0;
+unsigned int barth_analog_value_3 = 0;
+float buff_3 = 0;
+float relay_4_analog_read = 0;
+unsigned int barth_analog_value_4 = 0;
+float buff_4 = 0;
+float relay_5_analog_read = 0;
+unsigned int barth_analog_value_5 = 0;
+float buff_5 = 0;
+float relay_6_analog_read = 0;
+unsigned int barth_analog_value_6 = 0;
+float buff_6 = 0;
+float relay_7_analog_read = 0;
+unsigned int barth_analog_value_7 = 0;
+float buff_7 = 0;
+float relay_8_analog_read = 0;
+unsigned int barth_analog_value_8 = 0;
+float buff_8 = 0;
+float relay_9_analog_read = 0;
+unsigned int barth_analog_value_9 = 0;
+float buff_9 = 0;
+float relay_10_analog_read = 0;
+unsigned int barth_analog_value_10 = 0;
+float buff_10 = 0;
+float relay_11_analog_read = 0;
+unsigned int barth_analog_value_11 = 0;
+float buff_11 = 0;
+float relay_12_analog_read = 0;
+unsigned int barth_analog_value_12 = 0;
+float buff_12 = 0;
+
+#define BARTH_READ_IN_DO_NOTHING              0
+#define BARTH_READ_IN_STEP_1                  1
+#define BARTH_READ_IN_STEP_2                  2
+#define BARTH_READ_IN_STEP_3                  3
+#define BARTH_READ_IN_STEP_4                  4
+#define BARTH_READ_IN_STEP_5                  5
+#define BARTH_READ_IN_STEP_6                  6
+#define BARTH_READ_IN_STEP_7                  7
+
+void setup() {
+  // put your setup code here, to run once:
+
+  Serial.begin(9600);
+  Serial.println(F("READY!"));
+  pinMode(BTY_SUPPLY_P, OUTPUT);
+  pinMode(GGW_LAUNCH_EN, OUTPUT);
+  pinMode(PRE_FIRE, OUTPUT);
+  pinMode(EXT_PS, OUTPUT);
+  pinMode(PRESENCE, OUTPUT);
+  pinMode(LANYARD_SW1_PS, OUTPUT);
+  pinMode(10, INPUT);
+  /*--------------------------------Initializations---------------------------------*/
+  barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+  barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+  serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  Barth_Out_Control_thread();
+  Barth_Read_In_thread();
+  Serial_Command_thread();
+}
+
+void Barth_Out_Control_thread()
+{
+  if ((millis() - save_millis) >= barth_out_control_thread_counter)
+  {
+    switch(barth_out_control_thread_state)
+    {
+      case BARTH_OUT_CONTROL_DO_NOTHING:
+      {
+  
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_1:
+      {
+        /*Checks if the command was executed properly, the value barth_out = 1, is set from serial command step 1*/
+        if(barth_out == 1)
+        {
+            /*Switch ON BTY_SUPPLY_P from Barth OUT1*/
+            BTY_SUPPLY_P_ON;
+        }
+        /*Checks if the command was executed properly, the value barth_out = 2, is set from serial command step 1*/
+        else if((barth_out == 2))
+        {
+            /*Switch OFF BTY_SUPPLY_P from Barth OUT1*/
+            BTY_SUPPLY_P_OFF;
+        }
+        else
+        {
+          
+        }
+        /*----delay-----*/
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        /*the value barth_out is set to initial value*/
+        barth_out = 0; 
+        /*command for the next process*/
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3;
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_2:
+      {
+        if(barth_out == 3)
+        {
+            GGW_LAUNCH_EN_ON;
+        }
+        else if(barth_out == 4)
+        {
+            GGW_LAUNCH_EN_OFF;
+        }
+        else
+        {
+          
+        }
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        barth_out = 0;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3; 
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_3:
+      {
+        if(barth_out == 5)
+        {
+            PRE_FIRE_ON;
+        }
+        else if(barth_out == 6)
+        {
+            PRE_FIRE_OFF;
+        }
+        else
+        {
+          
+        }
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        barth_out = 0;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3; 
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_4:
+      {
+        if(barth_out == 7)
+        {
+            EXT_PS_ON;
+        }
+        else if(barth_out == 8)
+        {
+            EXT_PS_OFF;
+        }
+        else
+        {
+          
+        }  
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        barth_out = 0; 
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3;
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_5:
+      {
+        if(barth_out == 9)
+        {
+            PRESENCE_ON;
+        }
+        else if(barth_out == 10)
+        {
+            PRESENCE_OFF;
+        }
+        else
+        {
+          
+        }
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        barth_out = 0; 
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3;
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      case BARTH_OUT_CONTROL_STEP_6:
+      {
+        if(barth_out == 11)
+        {
+            LANYARD_SW1_PS_ON;
+        }
+        else if(barth_out == 12)
+        {
+            LANYARD_SW1_PS_OFF;
+        }
+        save_millis = millis();
+        barth_out_control_thread_counter = 100;
+        barth_out = 0; 
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_3;
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }
+      break;
+      default:
+      {
+        barth_out_control_thread_state = BARTH_OUT_CONTROL_DO_NOTHING;
+      }           
+    }
+  }
+  if (save_millis > millis())
+  {
+    save_millis = millis();
+  }
+}
+
+void Barth_Read_In_thread()
+{
+  if ((millis() - save_millis) >= barth_read_in_thread_counter)
+  {
+    switch(barth_read_in_thread_state)
+    {
+      case BARTH_READ_IN_DO_NOTHING:
+      {
+      
+      }
+      break;
+      case BARTH_READ_IN_STEP_1:
+      {
+        /*reads analog values of USB_RELAY_1_C to Barth IN1: HOBS_EN*/
+        if (barth_in == 1)
+        {
+            barth_analog_value_1 = analogRead(A0);
+            buff_1 = barth_analog_value_1*(0.01) + buff_1*(0.99);
+            relay_1_analog_read = (24*(buff_1))/1023;
+            //Serial.print("HOBS_EN = ");
+            Serial.print(relay_1_analog_read);
+        }
+        /*reads analog values of USB_RELAY_1_C to Barth IN1: GGW_LAUNCH_EN*/
+        else if (barth_in == 2)
+        {  
+            barth_analog_value_2 = analogRead(A0);
+            buff_2 = barth_analog_value_2*(0.01) + buff_2*(0.99);
+            relay_2_analog_read = (24*(buff_2))/1023;
+            //Serial.print("GGW_LAUNCH_EN = ");
+            Serial.print(relay_2_analog_read);
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_2:
+      {
+        /*reads analog values of USB_RELAY_2_C to Barth IN2: +12V_FUZE*/
+        if (barth_in == 3)
+        {
+            barth_analog_value_3 = analogRead(A1);
+            buff_3 = barth_analog_value_3*(0.01) + buff_3*(0.99);
+            relay_3_analog_read = (24*(buff_3))/1023;
+            //Serial.print("+12V_FUZE = ");
+            Serial.print(relay_3_analog_read);
+        }
+        /*reads analog values of USB_RELAY_2_C to Barth IN2: +28V_FUZE*/
+        else if (barth_in == 4)
+        {           
+            barth_analog_value_4 = analogRead(A1);
+            buff_4 = barth_analog_value_4*(0.01) + buff_4*(0.99);
+            relay_4_analog_read = (24*(buff_4))/1023;
+            //Serial.print("+28V_FUZE = ");
+            Serial.print(relay_4_analog_read);
+        }
+        else 
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_3:
+      {
+        /*reads analog values of USB_RELAY_3_C to Barth IN3: SEEKER_PS*/
+        if (barth_in == 5)
+        {
+            barth_analog_value_5 = analogRead(A2);
+            buff_5 = barth_analog_value_5*(0.01) + buff_5*(0.99);
+            relay_5_analog_read = (24*(buff_5))/1023;
+            //Serial.print("SEEKER_PS = ");
+            Serial.print(relay_5_analog_read);
+        }
+        /*reads analog values of USB_RELAY_3_C to Barth IN3: TEL_PS*/
+        else if (barth_in == 6)
+        {
+            barth_analog_value_6 = analogRead(A2);
+            buff_6 = barth_analog_value_6*(0.01) + buff_6*(0.99);
+            relay_6_analog_read = (24*(buff_6))/1023;
+            //Serial.print("TEL_PS = ");
+            Serial.print(relay_6_analog_read);
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_4:
+      {
+        /*reads analog values of USB_RELAY_4_C to Barth IN4: ADS_HEATER_PS*/
+        if (barth_in == 7)
+        {
+            barth_analog_value_7 = analogRead(A3);
+            buff_7 = barth_analog_value_7*(0.01) + buff_7*(0.99);
+            relay_7_analog_read = (24*(buff_7))/1023;
+            //Serial.print("ADS_HEATER_PS = ");
+            Serial.print(relay_7_analog_read);
+        }
+        /*reads analog values of USB_RELAY_4_C to Barth IN4: ADS_PS*/
+        else if (barth_in == 8)
+        {
+            barth_analog_value_8 = analogRead(A3);
+            buff_8 = barth_analog_value_8*(0.01) + buff_8*(0.99);
+            relay_8_analog_read = (24*(buff_8))/1023;
+            //Serial.print("ADS_PS = ");
+            Serial.print(relay_8_analog_read);
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_5:
+      {
+        /*reads analog values of USB_RELAY_5_C to Barth IN5: PRE_FIRE_MON*/
+        if (barth_in == 9)
+        {
+            barth_analog_value_9 = analogRead(A4);
+            buff_9 = barth_analog_value_9*(0.01) + buff_9*(0.99);
+            relay_9_analog_read = (24*(buff_9))/1023;
+            //Serial.print("PRE_FIRE_MON = ");
+            Serial.print(relay_9_analog_read);
+        }
+        /*reads analog values of USB_RELAY_5_C to Barth IN5: TEL_BAT_LATCH*/
+        else if (barth_in == 10)
+        {
+            barth_analog_value_10 = analogRead(A4);
+            buff_10 = barth_analog_value_10*(0.01) + buff_10*(0.99);
+            relay_10_analog_read = (24*(buff_10))/1023;
+            //Serial.print("TEL_BAT_LATCH = ");
+            Serial.print(relay_10_analog_read);
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_6:
+      {
+        /*reads analog values of USB_RELAY_6_C to Barth IN6: UMB_BREAK_FUZE*/
+        if (barth_in == 11)
+        {
+            barth_analog_value_11 = analogRead(A5);
+            buff_11 = barth_analog_value_11*(0.01) + buff_11*(0.99);
+            relay_11_analog_read = (24*(buff_11))/1023;
+            //Serial.print("UMB_BREAK_FUZE = ");
+            Serial.print(relay_11_analog_read);
+        }
+        /*reads analog values of USB_RELAY_6_C to Barth IN6: LYN_REL_FUZE*/
+        else if (barth_in == 12)
+        {
+            barth_analog_value_12 = analogRead(A5);
+            buff_12 = barth_analog_value_12*(0.01) + buff_12*(0.99);
+            relay_12_analog_read = (24*(buff_12))/1023;
+            //Serial.print("LYND_REL_FUZE = ");
+            Serial.print(relay_12_analog_read);
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      case BARTH_READ_IN_STEP_7:
+      {
+        /*reads digital value of USB_RELAY_7_C to Barth IN7: BTY_ACTIVATE*/
+        if (barth_in == 13) 
+        {
+          relayState = digitalRead(10);
+          //Serial.print("BTY_ACTIVATE = ");
+          Serial.print(relayState); 
+        }
+        else
+        {
+        
+        }
+        save_millis = millis();
+        barth_read_in_thread_counter = 100;
+        serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_2;
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      }
+      break;
+      default:
+      {
+        barth_read_in_thread_state = BARTH_READ_IN_DO_NOTHING;
+      } 
+    }
+  }
+  if (save_millis > millis())
+  {
+    save_millis = millis();
+  }
+}
+
+void Serial_Command_thread()
+{
+  if ((millis() - save_millis) >= serial_command_thread_counter)
+  {
+    switch(serial_command_thread_state)
+    {
+      case SERIAL_COMMAND_THREAD_DO_NOTHING:
+      {
+      
+      }
+      break;      
+      case SERIAL_COMMAND_THREAD_STEP_1:
+      {
+          if(Serial.available() > 0) 
+          {
+               char recieved = Serial.read();
+               buff += recieved;
+               data_ctr++;
+               if(recieved == '#')
+               {
+                  serial_okay = 1;
+               }
+          }
+          if(serial_okay == 1)
+          {
+              /*Controls BTY_SUPPLY_P_ON in Barth OUT1*/
+              if(buff.startsWith("EB902H00000", 0))
+              {
+                  /*set barth_out = 1 for the next process*/
+                  barth_out = 1;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_1;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls BTY_SUPPLY_P_OFF in Barth OUT1*/
+              else if(buff.startsWith("EB902L00000", 0))
+              {
+                  barth_out = 2;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_1;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls GGW_LAUNCH_EN_ON in Barth OUT2*/
+              else if(buff.startsWith("EB9020H0000", 0))
+              {
+                  barth_out = 3;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_2;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls GGW_LAUNCH_EN_OFF in Barth OUT2*/
+              else if(buff.startsWith("EB9020L0000", 0))
+              {
+                  barth_out = 4;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_2;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls PRE_FIRE_ON in Barth OUT3*/
+              else if(buff.startsWith("EB90200H000", 0))
+              {
+                  barth_out = 5;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_3;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls PRE_FIRE_OFF in Barth OUT3*/
+              else if(buff.startsWith("EB90200L000", 0))
+              {
+                  barth_out = 6;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_3;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls EXT_PS_ON in Barth OUT4*/
+              else if(buff.startsWith("EB902000H00", 0))
+              {
+                  barth_out = 7;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_4;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls EXT_PS_OFF in Barth OUT4*/
+              else if(buff.startsWith("EB902000L00", 0))
+              {
+                  barth_out = 8;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_4;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls PRESENCE_ON in Barth OUT5*/
+              else if(buff.startsWith("EB9020000H0", 0))
+              {
+                  barth_out = 9;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_5;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls PRESENCE_OFF in Barth OUT5*/
+              else if(buff.startsWith("EB9020000L0", 0))
+              {
+                  barth_out = 10;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_5;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls LANYARD_SW1_PS_ON in Barth OUT6*/
+              else if(buff.startsWith("EB90200000H", 0))
+              {
+                  barth_out = 11;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_6;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Controls LANYARD_SW1_PS_OFF in Barth OUT6*/
+              else if(buff.startsWith("EB90200000L", 0))
+              {
+                  barth_out = 12;
+                  barth_out_control_thread_state = BARTH_OUT_CONTROL_STEP_6;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads HOBS_EN in Barth IN1*/
+              else if(buff.startsWith("EB901H000000", 0))
+              {
+                  barth_in = 1;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_1;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads GGW_LAUNCH_EN in Barth IN1*/
+              else if(buff.startsWith("EB901L000000", 0))
+              {
+                  barth_in = 2;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_1;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads +12V_FUZE# in Barth IN2*/
+              else if(buff.startsWith("EB9010H00000", 0))
+              {
+                  barth_in = 3;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_2;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads +28V_FUZE# in Barth IN2*/
+              else if(buff.startsWith("EB9010L00000", 0))
+              {
+                  barth_in = 4;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_2;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads SEEKER_PS# in Barth IN3*/
+              else if(buff.startsWith("EB90100H0000", 0))
+              {
+                  barth_in = 5;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_3;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads TEL_PS# in Barth IN3*/
+              else if(buff.startsWith("EB90100L0000", 0))
+              {
+                  barth_in = 6;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_3;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads ADS_HEATER_PS# in Barth IN4*/
+              else if(buff.startsWith("EB901000H000", 0))
+              {
+                  barth_in = 7;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_4;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads ADS_PS# in Barth IN4*/
+              else if(buff.startsWith("EB901000L000", 0))
+              {
+                  barth_in = 8;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_4;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              } 
+              /*Reads PRE_FIRE_MON# in Barth IN5*/
+              else if(buff.startsWith("EB9010000H00", 0))
+              {
+                  barth_in = 9;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_5;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads TEL_BAT_LATCH# in Barth IN5*/
+              else if(buff.startsWith("EB9010000L00", 0))
+              {
+                  barth_in = 10;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_5;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads UMB_BREAK_FUZE# in Barth IN6*/
+              else if(buff.startsWith("EB90100000H0", 0))
+              {
+                  barth_in = 11;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_6;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads LYN_REL_FUZE# in Barth IN6*/
+              else if(buff.startsWith("EB90100000L0", 0))
+              {
+                  barth_in = 12;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_6;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads BTY_ACTIVATE in Barth IN7*/
+              else if(buff.startsWith("EB901000000H", 0))
+              {
+                  barth_in = 13;
+                  barth_read_in_thread_state = BARTH_READ_IN_STEP_7;
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+              }
+              /*Reads Software Version*/
+              else if(buff.startsWith("EB903VER", 0)) 
+              {
+                  Serial.print("PCB_ASSY_SAFETY_SAL_SW_VER_1.0_2023");
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+                  serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_5;
+              }
+              /*Check if Barth is Working*/
+              else if(buff.startsWith("EB900CHECK", 0)) 
+              {
+                  Serial.print("The Barth is HAPPY!");
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+                  serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_6;
+              }
+              /*Get all values of EB901 Commands*/                                
+              else if(buff.startsWith("EB904ALLVALUES", 0))
+              {
+                  Serial.print(relay_1_analog_read);
+                  Serial.print("HE/");
+                  Serial.print(relay_2_analog_read);
+                  Serial.print("GW/");
+                  Serial.print(relay_3_analog_read);
+                  Serial.print("F12/");
+                  Serial.print(relay_4_analog_read);
+                  Serial.print("F28/");
+                  Serial.print(relay_5_analog_read);
+                  Serial.print("SP/");
+                  Serial.print(relay_6_analog_read);
+                  Serial.print("TP/");
+                  Serial.print(relay_7_analog_read);
+                  Serial.print("AH/");
+                  Serial.print(relay_8_analog_read);
+                  Serial.print("AP/");
+                  Serial.print(relay_9_analog_read);
+                  Serial.print("PF/");
+                  Serial.print(relay_10_analog_read);
+                  Serial.print("TL/");
+                  Serial.print(relay_11_analog_read);
+                  Serial.print("UF/");
+                  Serial.print(relay_12_analog_read);
+                  Serial.print("LF/");
+                  Serial.print(relayState);
+                  Serial.print("BA");
+                  
+                  save_millis = millis();
+                  serial_command_thread_counter = 100;
+                  serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_4;
+              }
+              else
+              {
+                  serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_7;
+              }
+              
+              cursor_counter = 0;
+              data_ctr = 0;
+              serial_okay = 0;
+
+              buff = ""; 
+              save_millis = millis();
+              serial_command_thread_counter = 100;      
+          }
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_2:
+      {
+          Serial.print(F("RCV!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_3:
+      {
+          Serial.print(F("ACK!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_4:
+      {
+          Serial.print(F("/HAPPY!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_5:
+      {
+          Serial.print(F("OKAY!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_6:
+      {
+          Serial.print(F("NOTED!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+      case SERIAL_COMMAND_THREAD_STEP_7:
+      {
+          Serial.print(F("ERROR!"));
+          serial_command_thread_state = SERIAL_COMMAND_THREAD_STEP_1;
+          save_millis = millis();
+          serial_command_thread_counter = 100;
+      }
+      break;
+    }
+  }
+  if (save_millis > millis())
+  {
+    save_millis = millis();
+  }  
+}
+
+/*------------------------------------------------End of the code-----------------------------------------------------------*/
